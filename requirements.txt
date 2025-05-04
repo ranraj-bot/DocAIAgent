@@ -1,0 +1,9 @@
+streamlit>=1.20.0
+openai>=1.0.0 # Updated based on recent openai library changes
+anthropic>=0.20.0 # Updated based on recent anthropic library changes
+pillow>=10.0.0
+python-dotenv>=1.0.0
+pandas>=1.3.0
+# Optional / Future:
+# pytesseract>=0.3.10
+# tesseract-ocr # System package 
