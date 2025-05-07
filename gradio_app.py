@@ -5,25 +5,29 @@ import time
 from io import BytesIO
 from PIL import Image
 import os # For potential temporary file handling if needed
+import traceback # Import the traceback module
 
 # --- Import Core Logic Modules ---
 # Ensure these modules and the .env file are in the same directory or accessible
 try:
     from ocr_module import extract_text
-    from classifier import classify_and_suggest_fields, parse_classification
-    from extractor import extract_fields, parse_extraction
-    from reviewer import review_fields, parse_review
+    from classifier import classify_and_suggest_fields
+    from extractor import extract_key_value_pairs # Ensure this matches the refactored name
+    from reviewer import review_fields # Ensure this matches the refactored name
     # Load API keys if llm_module uses dotenv
     from dotenv import load_dotenv
     load_dotenv()
     print("Core logic modules loaded successfully.")
 except ImportError as e:
-    print(f"Error importing modules: {e}")
+    print("--- ERROR IMPORTING CORE MODULES --- ") # Add header for clarity
+    traceback.print_exc() # *** THIS PRINTS THE FULL TRACEBACK ***
+    print(f"Error details: {e}") # Keep original error message
+    print("--- DEFINING DUMMY FUNCTIONS AS FALLBACK --- ") # Add footer
     # Define dummy functions if modules fail to import, allowing UI to load
-    def extract_text(img_bytes): return f"DUMMY OCR for {len(img_bytes)} bytes. Import failed."
+    def extract_text(img_bytes, ocr_engine='google_vision'): return f"DUMMY OCR for {len(img_bytes)} bytes. Import failed."
     def classify_and_suggest_fields(text, user_fields=None): return {"doc_type": "dummy (import failed)", "fields": ["Field A", "Field B"]}
-    def extract_fields(text, fields): return {f: f"dummy value {i+1}" for i, f in enumerate(fields)}
-    def review_fields(text, extracted_data): return {f: {"status": "DUMMY", "feedback": "import failed"} for f in extracted_data}
+    def extract_key_value_pairs(fields, ocr_text="", image_bytes=None): return {f: f"dummy value {i+1}" for i, f in enumerate(fields)}
+    def review_fields(fields_to_review, ocr_text="", image_bytes=None): return {f: {"status": "DUMMY", "feedback": "import failed"} for f in fields_to_review}
 
 
 # --- Constants ---
@@ -90,11 +94,11 @@ def handle_upload(file_obj):
     # --- OCR Step ---
     try:
         print("Performing OCR...")
-        ocr_text_result = extract_text(img_bytes)
-        print(f"OCR Text (first 100 chars): {ocr_text_result[:100]}")
+        ocr_text_result = extract_text(img_bytes, ocr_engine='google_vision')
+        #print(f"OCR Text (first 100 chars): {ocr_text_result[:100]}")
         if "ERROR" in ocr_text_result:
             raise ValueError(f"OCR Failed: {ocr_text_result}")
-        yield { state_ocr_text: ocr_text_result } # Corrected
+        yield { state_ocr_text: ocr_text_result }
     except Exception as e:
         print(f"Error during OCR: {e}")
         yield { status_text: gr.update(value=f"**Status:** Error during OCR: {e}") }
@@ -104,7 +108,10 @@ def handle_upload(file_obj):
     yield { status_text: gr.update(value="**Status:** Processing - Classifying document... 🧠") }
     try:
         print("Classifying document...")
-        classification_res = classify_and_suggest_fields(ocr_text_result)
+        classification_res = classify_and_suggest_fields(
+            text=ocr_text_result, 
+            image_bytes=img_bytes
+        )
         print(f"Classification Result: {classification_res}")
         doc_type = classification_res.get("doc_type", "error")
         suggested_fields = classification_res.get("fields", [])
@@ -144,7 +151,7 @@ def handle_upload(file_obj):
          }
 
 
-def handle_confirm_and_extract(selected_fields_list, ocr_text):
+def handle_confirm_and_extract(selected_fields_list, ocr_text, image_bytes):
     """Handles field confirmation, triggers extraction, pause, and review."""
     if not selected_fields_list:
         # This shouldn't happen if button is disabled, but as a fallback
@@ -167,7 +174,7 @@ def handle_confirm_and_extract(selected_fields_list, ocr_text):
     }
 
     try:
-        extraction_res = extract_fields(ocr_text, selected_fields_list)
+        extraction_res = extract_key_value_pairs(selected_fields_list, ocr_text, image_bytes=image_bytes)
         print(f"Extraction result: {extraction_res}")
 
         # Prepare DataFrame for display
@@ -197,14 +204,21 @@ def handle_confirm_and_extract(selected_fields_list, ocr_text):
     yield { status_text: gr.update(value="**Status:** Processing - Reviewing extraction... 🧐") }
     try:
         print("Reviewing extracted fields...")
-        review_res = review_fields(ocr_text, extraction_res)
+        review_res = review_fields(
+            fields_to_review=extraction_res, 
+            ocr_text=ocr_text, 
+            image_bytes=image_bytes
+        )
         print(f"Review result: {review_res}")
 
         # Prepare final DataFrame with review results
         display_data = []
-        for field in selected_fields_list: # Use the selected list to ensure order
-            extracted_value = extraction_res.get(field, "Not Extracted")
-            review = review_res.get(field, {"status": "ERROR", "feedback": "Not in review"})
+        # Ensure extraction_res is a dict before iterating its keys for review display
+        effective_fields_to_review = list(extraction_res.keys()) if isinstance(extraction_res, dict) else selected_fields_list
+        
+        for field in effective_fields_to_review: 
+            extracted_value = extraction_res.get(field, "Not Extracted") if isinstance(extraction_res, dict) else "Extraction Error"
+            review = review_res.get(field, {"status": "ERROR", "feedback": "Not reviewed"}) if isinstance(review_res, dict) else {"status": "ERROR", "feedback": "Review Error"}
             status_icon = "✅" if review.get("status") == "PASS" else ("❌" if review.get("status") == "FAIL" else "❓")
             display_data.append({
                 'Field': field,
@@ -216,11 +230,11 @@ def handle_confirm_and_extract(selected_fields_list, ocr_text):
 
         yield {
             status_text: gr.update(value="**Status:** Complete - Review finished. ✅"),
-            extraction_display: gr.update(visible=False), # Hide intermediate extraction
-            review_display: gr.update(value=df_review, visible=True), # Show final review
-            download_button: gr.update(visible=True, interactive=True), # Enable download
-            state_review_result: review_res, # Corrected
-            state_step: 7,                 # Corrected
+            extraction_display: gr.update(visible=False), 
+            review_display: gr.update(value=df_review, visible=True), 
+            download_button: gr.update(visible=True, interactive=True), 
+            state_review_result: review_res, 
+            state_step: 7, 
         }
     except Exception as e:
         print(f"Error during Review: {e}")
@@ -393,7 +407,7 @@ with gr.Blocks(theme=gr.themes.Soft(), title="🕵️ Document AI Agent Demo") a
     # 2. Confirm button triggers extraction and subsequent review
     confirm_button.click(
         fn=handle_confirm_and_extract,
-        inputs=[field_checkboxes, state_ocr_text],
+        inputs=[field_checkboxes, state_ocr_text, state_image_bytes],
         outputs=extract_outputs,
          show_progress="hidden"
     )

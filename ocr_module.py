@@ -1,33 +1,43 @@
-from PIL import Image
-import io
+import time
+import os
+import pytesseract
 
-def extract_text(image_bytes: bytes) -> str:
-    """Extracts text from an image provided as bytes. Placeholder function."""
-    # In a real scenario, you would use Tesseract, AWS Textract, Google Vision API, etc.
-    # For the demo, we return mock text based perhaps on the first few bytes
-    # or just a static string.
-    print(f"Received {len(image_bytes)} bytes for OCR (using mock).")
-    # Simulate some processing
+from utils.ocr_engines import (
+    _call_tesseract_ocr,
+    _call_surya_ocr,
+    _call_google_vision_ocr,
+    _convert_lines_to_reading_order
+)
+
+def extract_text(image_bytes: bytes, ocr_engine: str = 'surya') -> str:
+    line_data = []
+    valid_engines = ['tesseract', 'surya', 'google']
+
     try:
-        # Try to open the image to check if it's valid (optional)
-        img = Image.open(io.BytesIO(image_bytes))
-        print(f"Mock OCR: Image size {img.size}, format {img.format}")
-    except Exception as e:
-        print(f"Mock OCR: Could not open image - {e}")
-        return "MOCK OCR ERROR: Could not read image data."
+        selected_engine = ocr_engine.lower()
 
-    # Return consistent mock text for the demo
-    return "MOCK TEXT:\nINVOICE\nNumber: INV-000123\nDate: 2025-05-01\nVendor: ACME Corp\nTotal Amount: $1,234.56\nLine Items:\nItem A - $1000.00\nItem B - $234.56"
+        if selected_engine == 'tesseract':
+            line_data = _call_tesseract_ocr(image_bytes)
+        elif selected_engine == 'surya':
+            line_data = _call_surya_ocr(image_bytes)
+        elif selected_engine in ['google', 'google_vision']:
+            line_data = _call_google_vision_ocr(image_bytes)
+        else:
+            return f"OCR ERROR: Unknown engine '{ocr_engine}'. Choose from: {valid_engines}"
 
-# Simple test (optional)
-if __name__ == "__main__":
-    # Create a dummy image bytes object (e.g., a small black square)
-    try:
-        img = Image.new('RGB', (60, 30), color = 'red')
-        img_byte_arr = io.BytesIO()
-        img.save(img_byte_arr, format='PNG')
-        img_bytes = img_byte_arr.getvalue()
-        print("Testing OCR stub:")
-        print(extract_text(img_bytes))
+        if not line_data:
+             return "OCR INFO: No text detected."
+
+        reading_order_text = _convert_lines_to_reading_order(line_data)
+        return reading_order_text
+
+    except pytesseract.TesseractNotFoundError:
+         return "OCR ERROR: Tesseract not found."
+    except ImportError as ie:
+         return f"OCR ERROR: Missing dependency for '{ocr_engine}'. Details: {ie}"
+    except RuntimeError as re:
+         return f"OCR ERROR: Engine '{ocr_engine}' runtime error. Details: {re}"
+    except NameError as ne:
+         return f"OCR ERROR: Engine '{ocr_engine}' implementation not found. Details: {ne}"
     except Exception as e:
-        print(f"Error in OCR stub test: {e}") 
+         return f"OCR ERROR: Unexpected error ({type(e).__name__})."
