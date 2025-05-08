@@ -141,7 +141,7 @@ Here are example commands to serve some of the Qwen models used in this project:
 
 Refer to the [vLLM documentation](https://vllm.readthedocs.io/en/latest/index.html) for more details on installation, supported models, and serving options.
 
-## Future Enhancements (Inferred from Notebook)
+## Future Enhancements
 
 *   **Visual Reasoning:** The notebook mentions "Future: Visual Reasoning," indicating plans or potential for incorporating more advanced visual understanding capabilities into the review or extraction processes.
 *   **Agent-based Processing:** The `document_ai_agent.py` demonstrates an agentic approach which could be further developed for more complex, multi-step document processing tasks and added to the UI. Demo is availible in the Jupyter notebook
