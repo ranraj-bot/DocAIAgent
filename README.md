@@ -1,5 +1,5 @@
 # Document AI Agent
-This Repo was for a workshop on How to build your own Document AI Agent using Open Source LLMs
+This Repository was created as part of the workshop on "How to build your own Document AI Agent using Open Source LLMs"
 
 ## Overview
 
